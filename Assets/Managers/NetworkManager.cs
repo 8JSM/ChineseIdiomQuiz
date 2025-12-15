@@ -33,6 +33,9 @@ public class NetworkManager : MonoBehaviour
     public Action<string> OnNewQuestion;
     public Action<PktS2CRoundResultNotify> OnRoundResult;
     public Action<PktS2CGameOverNotify> OnGameOver;
+    public Action<PktS2CUserEnterNotify> OnUserEnteredRoom;
+    public Action<PktS2CEnterRoomRes> OnEnterRoomResponse;
+    public Action<PktS2CLoginRes> OnLoginResponse;
 
     void Awake()
     {
@@ -167,11 +170,29 @@ public class NetworkManager : MonoBehaviour
                 break;
 
             case PacketType.S2C_USER_ENTER_NOTIFY:
-                 PktS2CUserEnterNotify enterNotify = BytesToStruct<PktS2CUserEnterNotify>(data);
+                PktS2CUserEnterNotify enterNotify = BytesToStruct<PktS2CUserEnterNotify>(data);
                 Debug.Log($"[{enterNotify.userSlotIndex}] {enterNotify.nickname} 님이 방에 입장했습니다.");
-                //OnUserEnteredRoom?.Invoke(enterNotify); // UI 매니저에 알림
+                OnUserEnteredRoom?.Invoke(enterNotify); // UI 매니저에 알림
                 break;
-               
+
+            case PacketType.S2C_GAME_START_NOTIFY:
+                Debug.Log("서버로부터 게임 시작 신호 수신!");
+                OnGameStart?.Invoke(); // 게임 시작 이벤트를 UI에 알림
+                break;
+            case PacketType.S2C_NEW_QUESTION_NOTIFY:
+                PktS2CNewQuestionNotify questionPkt = BytesToStruct<PktS2CNewQuestionNotify>(data);
+                Debug.Log($"새 문제 수신: {questionPkt.question}");
+                OnNewQuestion?.Invoke(questionPkt.question); // 새 문제 이벤트를 UI에 알림
+                break;
+            case PacketType.S2C_ROUND_RESULT_NOTIFY:
+                PktS2CRoundResultNotify resultPkt = BytesToStruct<PktS2CRoundResultNotify>(data);
+                OnRoundResult?.Invoke(resultPkt); // 라운드 결과 이벤트를 UI에 알림
+                break;
+             case PacketType.S2C_GAME_OVER_NOTIFY:
+                PktS2CGameOverNotify overPkt = BytesToStruct<PktS2CGameOverNotify>(data);
+                OnGameOver?.Invoke(overPkt); // 게임 종료 이벤트를 UI에 알림
+                break;
+
         }
     }
 
