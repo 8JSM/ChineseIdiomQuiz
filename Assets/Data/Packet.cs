@@ -6,6 +6,7 @@ public struct PlayerInfo
     public int slotIndex;
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)]
     public string nickname;
+    public int score;
 }
 
 public enum PacketType : short
@@ -74,3 +75,46 @@ public struct PktS2CUserEnterNotify
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)]
     public string nickname;
 }
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct PktS2CGameStartNotify
+{
+    public PacketHeader header;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Unicode)]
+public struct PktS2CNewQuestionNotify
+{
+    public PacketHeader header;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+    public string question;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Unicode)]
+public struct PktC2SSubmitAnswerReq
+{
+    public PacketHeader header;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+    public string answer;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct PktS2CRoundResultNotify
+{
+    public PacketHeader header;
+    public int winnerSlotIndex;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+    public string answer;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
+    public PlayerInfo[] players;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct PktS2CGameOverNotify
+{
+    public PacketHeader header;
+    public int winnerSlotIndex;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)]
+    public string winnerNickname;
+}
+
