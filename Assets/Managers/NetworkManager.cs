@@ -8,27 +8,31 @@ using UnityEngine;
 
 public class NetworkManager : MonoBehaviour
 {
-   public static NetworkManager Instance { get; private set; }
+    public static NetworkManager Instance { get; private set; }
 
     private TcpClient _client;
     private NetworkStream _stream;
     private byte[] _receiveBuffer = new byte[4096];
 
     private struct QueuedPacket
-{
-    public PacketType type;
-    public byte[] data;
-}
-    
+    {
+        public PacketType type;
+        public byte[] data;
+    }
+
     // 메인 스레드에서 처리할 패킷들을 담아두는 스레드 안전 큐
     private ConcurrentQueue<QueuedPacket> _packetQueue = new ConcurrentQueue<QueuedPacket>();
 
     // 서버 IP, 포트. Inspector에서 설정 가능
     public string serverIp = "127.0.0.1";
     public int serverPort = 12345;
-    
+
     // UI 업데이트를 위한 델리게이트와 이벤트
     public Action<string> OnStatusTextChanged;
+    public Action OnGameStart;
+    public Action<string> OnNewQuestion;
+    public Action<PktS2CRoundResultNotify> OnRoundResult;
+    public Action<PktS2CGameOverNotify> OnGameOver;
 
     void Awake()
     {
@@ -99,7 +103,7 @@ public class NetworkManager : MonoBehaviour
 
                         // 큐에 넣어서 메인 스레드가 처리하도록 함
                         _packetQueue.Enqueue(new QueuedPacket { type = header.type, data = packetBytes });
-                        
+
                         // 처리한 패킷만큼 메모리 스트림에서 제거
                         byte[] remainingBytes = new byte[ms.Length - header.size];
                         ms.Read(remainingBytes, 0, remainingBytes.Length);
@@ -124,11 +128,11 @@ public class NetworkManager : MonoBehaviour
     {
         // 큐에 쌓인 패킷들을 하나씩 처리
         while (_packetQueue.TryDequeue(out QueuedPacket packet))
-    {
-        ProcessPacket(packet.type, packet.data);
+        {
+            ProcessPacket(packet.type, packet.data);
+        }
     }
-    }
-    
+
     // 패킷 종류에 따라 분기 처리 (메인 스레드에서 실행됨)
     private void ProcessPacket(PacketType type, byte[] data)
     {
@@ -136,16 +140,16 @@ public class NetworkManager : MonoBehaviour
         {
             case PacketType.S2C_LOGIN_RES:
                 PktS2CLoginRes loginRes = BytesToStruct<PktS2CLoginRes>(data);
-                if(loginRes.success)
+                if (loginRes.success)
                     OnStatusTextChanged?.Invoke("로그인 성공!");
                 else
                     OnStatusTextChanged?.Invoke("로그인 실패!");
                 break;
 
             case PacketType.S2C_ENTER_ROOM_RES:
-                 PktS2CEnterRoomRes enterRes = BytesToStruct<PktS2CEnterRoomRes>(data);
-                 if(enterRes.success)
-                 {
+                PktS2CEnterRoomRes enterRes = BytesToStruct<PktS2CEnterRoomRes>(data);
+                if (enterRes.success)
+                {
                     string msg = $"방 입장 성공! 현재 인원: {enterRes.playerCount}\n";
                     for (int i = 0; i < enterRes.players.Length; ++i)
                     {
@@ -155,16 +159,19 @@ public class NetworkManager : MonoBehaviour
                         }
                     }
                     OnStatusTextChanged?.Invoke(msg);
-                 }
-                 else
-                 {
+                }
+                else
+                {
                     OnStatusTextChanged?.Invoke("방 입장 실패 (꽉 찼거나 오류 발생)");
-                 }
+                }
                 break;
-                
-             case PacketType.S2C_USER_ENTER_NOTIFY:
-                 // ... 다른 유저 입장 알림 처리
-                 break;
+
+            case PacketType.S2C_USER_ENTER_NOTIFY:
+                 PktS2CUserEnterNotify enterNotify = BytesToStruct<PktS2CUserEnterNotify>(data);
+                Debug.Log($"[{enterNotify.userSlotIndex}] {enterNotify.nickname} 님이 방에 입장했습니다.");
+                //OnUserEnteredRoom?.Invoke(enterNotify); // UI 매니저에 알림
+                break;
+               
         }
     }
 
@@ -180,7 +187,7 @@ public class NetworkManager : MonoBehaviour
         Marshal.FreeHGlobal(ptr);
         return arr;
     }
-    
+
     // [핵심] byte[]를 구조체로 변환하는 범용 함수
     public static T BytesToStruct<T>(byte[] buffer) where T : struct
     {

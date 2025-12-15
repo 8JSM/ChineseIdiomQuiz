@@ -5,10 +5,17 @@ using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
+     [Header("UI Panels")]
+    public GameObject lobbyPanel; // 로비 UI 전체를 담는 부모 오브젝트
+    public GameObject gamePanel;  // 게임 UI 전체를 담는 부모 오브젝트 (GameUIManager가 제어)
+
+    [Header("Lobby UI")]
     public TMP_InputField nicknameInput;
     public Button loginButton;
     public Button enterRoomButton;
     public TextMeshProUGUI statusText;
+
+    public TextMeshProUGUI[] playerLobbyTexts;
 
     void Start()
     {
@@ -17,6 +24,10 @@ public class UIManager : MonoBehaviour
         enterRoomButton.onClick.AddListener(OnEnterRoomButtonClicked);
 
         // NetworkManager의 이벤트에 UI 업데이트 함수 구독
+        // NetworkManager.Instance.OnLoginResponse += HandleLoginResponse;
+        // NetworkManager.Instance.OnEnterRoomResponse += HandleEnterRoomResponse;
+        // NetworkManager.Instance.OnUserEnteredRoom += HandleUserEntered;
+        // NetworkManager.Instance.OnGameStart += HandleGameStart;
         NetworkManager.Instance.OnStatusTextChanged += UpdateStatusText;
 
         // 처음엔 서버 접속부터
@@ -34,7 +45,7 @@ public class UIManager : MonoBehaviour
         // 로그인 패킷 생성
         PktC2SLoginReq packet = new PktC2SLoginReq();
         packet.header.size = (short)System.Net.IPAddress.HostToNetworkOrder((short)Marshal.SizeOf<PktC2SLoginReq>());
-    packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder((short)PacketType.C2S_LOGIN_REQ);
+        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder((short)PacketType.C2S_LOGIN_REQ);
         packet.nickname = nicknameInput.text;
 
         // NetworkManager를 통해 전송
@@ -46,7 +57,7 @@ public class UIManager : MonoBehaviour
         // 0번 방 입장 요청 패킷 생성
         PktC2SEnterRoomReq packet = new PktC2SEnterRoomReq();
         packet.header.size = (short)System.Net.IPAddress.HostToNetworkOrder((short)Marshal.SizeOf<PktC2SEnterRoomReq>());
-    packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder((short)PacketType.C2S_ENTER_ROOM_REQ);
+        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder((short)PacketType.C2S_ENTER_ROOM_REQ);
         packet.roomIndex = 0;
 
         NetworkManager.Instance.Send(packet);
