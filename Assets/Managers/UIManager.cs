@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using TMPro;
 using UnityEngine;
@@ -14,8 +15,10 @@ public class UIManager : MonoBehaviour
     public Button loginButton;
     public Button enterRoomButton;
     public TextMeshProUGUI statusText;
+    public TextMeshProUGUI playerListText;
 
     public TextMeshProUGUI[] playerLobbyTexts;
+   private string[] _playerSlotNicknames = new string[4];
 
     void Start()
     {
@@ -82,24 +85,30 @@ public class UIManager : MonoBehaviour
 
     private void HandleLoginResponse(PktS2CLoginRes res)
     {
+        Debug.Log("HandleLoginResponse 함수가 호출되었습니다.");
         statusText.text = res.success ? "로그인 성공!" : "로그인 실패!";
     }
 
     private void HandleEnterRoomResponse(PktS2CEnterRoomRes res)
     {
-        if (res.success)
+        Debug.Log("HandleEnterRoomResponse 함수가 호출되었습니다.");
+         if (res.success)
         {
             statusText.text = "방 입장 성공! 다른 플레이어를 기다립니다...";
-            // 기존 플레이어 정보로 UI 업데이트
-            for (int i = 0; i < 4; i++) playerLobbyTexts[i].text = ""; // 초기화
+            
+            // 데이터 모델을 먼저 초기화하고 서버가 준 정보로 채웁니다.
+            System.Array.Clear(_playerSlotNicknames, 0, _playerSlotNicknames.Length);
             for (int i = 0; i < res.playerCount; i++)
             {
                 var player = res.players[i];
                 if (!string.IsNullOrEmpty(player.nickname))
                 {
-                    playerLobbyTexts[player.slotIndex].text = player.nickname;
+                    _playerSlotNicknames[player.slotIndex] = player.nickname;
                 }
             }
+            
+            // UI 업데이트 함수를 '한 번만' 호출합니다.
+            UpdateAllPlayerUI();
         }
         else
         {
@@ -109,14 +118,39 @@ public class UIManager : MonoBehaviour
 
     private void HandleUserEntered(PktS2CUserEnterNotify data)
     {
-        Debug.Log($"HandleUserEntered 호출됨: {data.nickname} at slot {data.userSlotIndex}");
+        Debug.Log($"HandleUserEntered 함수가 호출되었습니다: Nickname={data.nickname}, Slot={data.userSlotIndex}");
         playerLobbyTexts[data.userSlotIndex].text = data.nickname;
         statusText.text = $"{data.nickname} 님이 입장했습니다.";
+        UpdateAllPlayerUI();
+    }
+
+    private void UpdateAllPlayerUI()
+    {
+        int playerCount = 0;
+        string listStr = ""; // playerListText에 들어갈 문자열
+
+        for (int i = 0; i < _playerSlotNicknames.Length; i++)
+        {
+            if (!string.IsNullOrEmpty(_playerSlotNicknames[i]))
+            {
+                // 데이터가 있으면 닉네임 표시
+                playerLobbyTexts[i].text = _playerSlotNicknames[i];
+                listStr += $"[{i}] {_playerSlotNicknames[i]}\n";
+                playerCount++;
+            }
+            else
+            {
+                // 데이터가 없으면 빈 슬롯으로 표시
+                playerLobbyTexts[i].text = "(빈 슬롯)";
+            }
+        }
+
+        playerListText.text = $"현재 인원: {playerCount}\n" + listStr;
     }
 
     private void HandleGameStart()
     {
-        Debug.Log("HandleGameStart 호출됨! 게임 패널을 활성화합니다.");
+       Debug.Log("HandleGameStart 함수가 호출되었습니다! 게임 패널을 활성화합니다.");
         lobbyPanel.SetActive(false);
         gamePanel.SetActive(true);
     }
