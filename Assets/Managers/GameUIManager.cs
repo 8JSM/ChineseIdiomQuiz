@@ -42,6 +42,7 @@ public class GameUIManager : MonoBehaviour
         notificationText.gameObject.SetActive(false);
         questionText.text = "잠시 후 문제가 출제됩니다...";
         ClearScores(); // 점수판 초기화
+        SetInputActive(false);
     }
 
     // NetworkManager가 "새 문제!" 방송을 하면 호출될 함수
@@ -94,10 +95,8 @@ public class GameUIManager : MonoBehaviour
         if (string.IsNullOrEmpty(answerInput.text)) return;
 
         PktC2SSubmitAnswerReq packet = new PktC2SSubmitAnswerReq();
-        short size = (short)Marshal.SizeOf(packet);
-        short type = (short)PacketType.C2S_SUBMIT_ANSWER_REQ;
-        packet.header.size = System.Net.IPAddress.HostToNetworkOrder(size);
-        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder(type);
+
+
         packet.answer = answerInput.text;
 
         NetworkManager.Instance.Send(packet);
@@ -124,13 +123,23 @@ public class GameUIManager : MonoBehaviour
 
     void UpdateScores(PlayerInfo[] players)
     {
-        for (int i = 0; i < players.Length; i++)
+        foreach (var scoreText in playerScoreTexts)
         {
-            var player = players[i];
-            if (!string.IsNullOrEmpty(player.nickname))
+            scoreText.gameObject.SetActive(false);
+        }
+
+        // 2. 서버로부터 받은 플레이어 정보로 UI를 업데이트합니다.
+        foreach (var player in players)
+        {
+            // 3. 닉네임이 비어있거나 NULL이면 쓰레기 데이터일 가능성이 높으므로 건너뜁니다.
+            if (string.IsNullOrEmpty(player.nickname))
+                continue;
+
+            // 4. (가장 중요) slotIndex가 playerScoreTexts 배열의 유효한 범위 내에 있는지 확인합니다.
+            if (player.slotIndex >= 0 && player.slotIndex < playerScoreTexts.Length)
             {
-                // playerScoreTexts의 인덱스는 플레이어의 slotIndex와 일치해야 함
                 playerScoreTexts[player.slotIndex].text = $"{player.nickname}: {player.score}";
+                playerScoreTexts[player.slotIndex].gameObject.SetActive(true);
             }
         }
     }
