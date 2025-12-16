@@ -18,7 +18,7 @@ public class UIManager : MonoBehaviour
     public TextMeshProUGUI playerListText;
 
     public TextMeshProUGUI[] playerLobbyTexts;
-   private string[] _playerSlotNicknames = new string[4];
+    private string[] _playerSlotNicknames = new string[4];
 
     void Start()
     {
@@ -47,11 +47,10 @@ public class UIManager : MonoBehaviour
 
         // 로그인 패킷 생성
         PktC2SLoginReq packet = new PktC2SLoginReq();
-        short size = (short)Marshal.SizeOf(packet);
-        short type = (short)PacketType.C2S_LOGIN_REQ;
-        Debug.Log($"[전송 전] Original size: {size}, Original type: {type}");
-        packet.header.size = System.Net.IPAddress.HostToNetworkOrder(size);
-        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder(type);
+        
+        
+        packet.header.size = (short)Marshal.SizeOf(packet);
+        packet.header.type = PacketType.C2S_LOGIN_REQ;
 
         Debug.Log($"[전송 전] Converted size: {packet.header.size}, Converted type: {(short)packet.header.type}");
         packet.nickname = nicknameInput.text;
@@ -64,12 +63,11 @@ public class UIManager : MonoBehaviour
     {
         // 0번 방 입장 요청 패킷 생성
         PktC2SEnterRoomReq packet = new PktC2SEnterRoomReq();
-        short size = (short)Marshal.SizeOf(packet);
-        short type = (short)PacketType.C2S_ENTER_ROOM_REQ;
+        
 
-        Debug.Log($"[전송 전] Original size: {size}, Original type: {type}");
-        packet.header.size = System.Net.IPAddress.HostToNetworkOrder(size);
-        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder(type);
+        
+        packet.header.size = (short)Marshal.SizeOf(packet);
+        packet.header.type = PacketType.C2S_ENTER_ROOM_REQ;
 
         Debug.Log($"[전송 전] Converted size: {packet.header.size}, Converted type: {(short)packet.header.type}");
         packet.roomIndex = 0;
@@ -92,10 +90,10 @@ public class UIManager : MonoBehaviour
     private void HandleEnterRoomResponse(PktS2CEnterRoomRes res)
     {
         Debug.Log("HandleEnterRoomResponse 함수가 호출되었습니다.");
-         if (res.success)
+        if (res.success)
         {
             statusText.text = "방 입장 성공! 다른 플레이어를 기다립니다...";
-            
+
             // 데이터 모델을 먼저 초기화하고 서버가 준 정보로 채웁니다.
             System.Array.Clear(_playerSlotNicknames, 0, _playerSlotNicknames.Length);
             for (int i = 0; i < res.playerCount; i++)
@@ -106,7 +104,7 @@ public class UIManager : MonoBehaviour
                     _playerSlotNicknames[player.slotIndex] = player.nickname;
                 }
             }
-            
+
             // UI 업데이트 함수를 '한 번만' 호출합니다.
             UpdateAllPlayerUI();
         }
@@ -150,7 +148,7 @@ public class UIManager : MonoBehaviour
 
     private void HandleGameStart()
     {
-       Debug.Log("HandleGameStart 함수가 호출되었습니다! 게임 패널을 활성화합니다.");
+        Debug.Log("HandleGameStart 함수가 호출되었습니다! 게임 패널을 활성화합니다.");
         lobbyPanel.SetActive(false);
         gamePanel.SetActive(true);
     }

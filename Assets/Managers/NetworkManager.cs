@@ -279,6 +279,25 @@ public class NetworkManager : MonoBehaviour
         try
         {
             byte[] data = StructToBytes(packet);
+            // a. 먼저 현재 리틀 엔디안 값을 읽어옵니다.
+            short size = BitConverter.ToInt16(data, 0);
+            short type = BitConverter.ToInt16(data, 2);
+
+            Debug.Log($"[전송 전] Original size: {size}, Original type: {type}");
+
+            // 3. BitConverter를 사용하지 않고, 수동으로 Big Endian 바이트를 data 배열에 직접 씁니다.
+            //    (size >> 8)은 상위 8비트를, (byte)size는 하위 8비트를 의미합니다.
+            data[0] = (byte)(size >> 8);
+            data[1] = (byte)size;
+            data[2] = (byte)(type >> 8);
+            data[3] = (byte)type;
+
+            // 로그를 찍어서 확인하려면, 변환된 값을 다시 읽어봐야 합니다.
+            short convertedSize = (short)((data[0] << 8) | data[1]);
+            Debug.Log($"[전송 후] Converted size: {convertedSize}"); // 이 값은 이제 8이 나와야 합니다.
+            // ----------------------------------------------------
+
+            // 디버깅 로그 (이제 이 로그에서 Converted size가 제대로 보여야 합니다)
             _stream.Write(data, 0, data.Length);
         }
         catch (Exception e)
