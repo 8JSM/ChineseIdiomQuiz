@@ -14,6 +14,8 @@ public class NetworkManager : MonoBehaviour
     private NetworkStream _stream;
     private byte[] _receiveBuffer = new byte[4096];
 
+    private bool _isDisconnectRequested = false;
+
     private struct QueuedPacket
     {
         public PacketType type;
@@ -84,7 +86,10 @@ public class NetworkManager : MonoBehaviour
                     int bytesRead = await _stream.ReadAsync(_receiveBuffer, 0, _receiveBuffer.Length);
                     if (bytesRead <= 0) break; // 연결 끊김
 
+                    long previousPosition = ms.Position;
+                    ms.Seek(0, SeekOrigin.End); // 스트림의 끝으로 이동
                     ms.Write(_receiveBuffer, 0, bytesRead); // 받은 데이터를 메모리 스트림에 누적
+                    ms.Position = previousPosition; // 원래 위치로 복원
 
                     // 완전한 패킷이 만들어졌는지 계속 확인
                     while (true)
@@ -97,38 +102,83 @@ public class NetworkManager : MonoBehaviour
                         ms.Read(headerBytes, 0, headerBytes.Length);
                         PacketHeader header = BytesToStruct<PacketHeader>(headerBytes);
 
-                        if (ms.Length < header.size) break; // 패킷이 아직 다 안 왔으면 break
+                        short packetSize = System.Net.IPAddress.NetworkToHostOrder(header.size);
+                        PacketType packetType = (PacketType)System.Net.IPAddress.NetworkToHostOrder((short)header.type);
+
+                        Debug.Log($"[ReceiveLoop-Check] Buffer Length: {ms.Length}, Header Size: {packetSize} (Raw: {header.size})");
+                        if (packetSize < 0 || packetSize > 4096) // 0보다 작거나 비정상적으로 큰 패킷은 무시
+                        {
+                            Debug.LogError($"Invalid packet size received: {packetSize}. Disconnecting.");
+                            _isDisconnectRequested = true;
+                            return; // ReceiveLoop 종료
+                        }
+                        if (ms.Length < header.size)
+                        {
+                            ms.Position = ms.Length;
+                            break;
+                        } // 패킷이 아직 다 안 왔으면 break
 
                         // 패킷 하나가 완전히 도착함
                         ms.Position = 0;
-                        byte[] packetBytes = new byte[header.size];
+                        byte[] packetBytes = new byte[packetSize];
                         ms.Read(packetBytes, 0, packetBytes.Length);
 
                         // 큐에 넣어서 메인 스레드가 처리하도록 함
-                        _packetQueue.Enqueue(new QueuedPacket { type = header.type, data = packetBytes });
+                        _packetQueue.Enqueue(new QueuedPacket { type = packetType, data = packetBytes });
+                        Debug.Log($"[ReceiveLoop] Enqueued Packet! Type: {packetType}, Queue Count: {_packetQueue.Count}");
 
                         // 처리한 패킷만큼 메모리 스트림에서 제거
-                        byte[] remainingBytes = new byte[ms.Length - header.size];
-                        ms.Read(remainingBytes, 0, remainingBytes.Length);
-                        ms.SetLength(0);
-                        ms.Write(remainingBytes, 0, remainingBytes.Length);
+                        long remainingLength = ms.Length - packetSize;
+                        if (remainingLength > 0)
+                        {
+                            byte[] remainingBytes = new byte[remainingLength];
+                            ms.Read(remainingBytes, 0, remainingBytes.Length);
+                            ms.SetLength(0);
+                            ms.Write(remainingBytes, 0, remainingBytes.Length);
+                        }
+                        else
+                        {
+                            ms.SetLength(0); // 남은 데이터가 없으면 완전히 비움
+                        }
+
                     }
                 }
             }
         }
         catch (Exception e)
         {
-            Debug.LogError($"Receive error: {e.Message}");
+            if (e is ObjectDisposedException)
+            {
+                Debug.Log("Stream was closed, likely due to disconnection.");
+            }
+            else
+            {
+                Debug.LogError($"Receive error: {e.Message}\n{e.StackTrace}");
+            }
         }
         finally
         {
-            Disconnect();
+            if (_client != null && _client.Connected)
+            {
+                _isDisconnectRequested = true;
+            }
         }
     }
 
     // 메인 스레드에서 실행되는 Update 함수
     void Update()
     {
+        if (_isDisconnectRequested)
+        {
+            Disconnect();
+            _isDisconnectRequested = false; // 처리 후 플래그 리셋
+            return; // 다른 처리를 하지 않고 종료
+        }
+
+        if (_packetQueue.Count > 0)
+        {
+            Debug.Log($"[Update] Found {_packetQueue.Count} packets in queue.");
+        }
         // 큐에 쌓인 패킷들을 하나씩 처리
         while (_packetQueue.TryDequeue(out QueuedPacket packet))
         {
@@ -170,6 +220,7 @@ public class NetworkManager : MonoBehaviour
                 break;
 
             case PacketType.S2C_USER_ENTER_NOTIFY:
+                Debug.Log("S2C_USER_ENTER_NOTIFY 처리 시작!");
                 PktS2CUserEnterNotify enterNotify = BytesToStruct<PktS2CUserEnterNotify>(data);
                 Debug.Log($"[{enterNotify.userSlotIndex}] {enterNotify.nickname} 님이 방에 입장했습니다.");
                 OnUserEnteredRoom?.Invoke(enterNotify); // UI 매니저에 알림
@@ -188,7 +239,7 @@ public class NetworkManager : MonoBehaviour
                 PktS2CRoundResultNotify resultPkt = BytesToStruct<PktS2CRoundResultNotify>(data);
                 OnRoundResult?.Invoke(resultPkt); // 라운드 결과 이벤트를 UI에 알림
                 break;
-             case PacketType.S2C_GAME_OVER_NOTIFY:
+            case PacketType.S2C_GAME_OVER_NOTIFY:
                 PktS2CGameOverNotify overPkt = BytesToStruct<PktS2CGameOverNotify>(data);
                 OnGameOver?.Invoke(overPkt); // 게임 종료 이벤트를 UI에 알림
                 break;

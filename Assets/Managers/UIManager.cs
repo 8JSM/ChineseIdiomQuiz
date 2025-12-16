@@ -5,7 +5,7 @@ using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
-     [Header("UI Panels")]
+    [Header("UI Panels")]
     public GameObject lobbyPanel; // 로비 UI 전체를 담는 부모 오브젝트
     public GameObject gamePanel;  // 게임 UI 전체를 담는 부모 오브젝트 (GameUIManager가 제어)
 
@@ -44,8 +44,13 @@ public class UIManager : MonoBehaviour
 
         // 로그인 패킷 생성
         PktC2SLoginReq packet = new PktC2SLoginReq();
-        packet.header.size = (short)System.Net.IPAddress.HostToNetworkOrder((short)Marshal.SizeOf<PktC2SLoginReq>());
-        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder((short)PacketType.C2S_LOGIN_REQ);
+        short size = (short)Marshal.SizeOf(packet);
+        short type = (short)PacketType.C2S_LOGIN_REQ;
+        Debug.Log($"[전송 전] Original size: {size}, Original type: {type}");
+        packet.header.size = System.Net.IPAddress.HostToNetworkOrder(size);
+        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder(type);
+
+        Debug.Log($"[전송 전] Converted size: {packet.header.size}, Converted type: {(short)packet.header.type}");
         packet.nickname = nicknameInput.text;
 
         // NetworkManager를 통해 전송
@@ -56,8 +61,14 @@ public class UIManager : MonoBehaviour
     {
         // 0번 방 입장 요청 패킷 생성
         PktC2SEnterRoomReq packet = new PktC2SEnterRoomReq();
-        packet.header.size = (short)System.Net.IPAddress.HostToNetworkOrder((short)Marshal.SizeOf<PktC2SEnterRoomReq>());
-        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder((short)PacketType.C2S_ENTER_ROOM_REQ);
+        short size = (short)Marshal.SizeOf(packet);
+        short type = (short)PacketType.C2S_ENTER_ROOM_REQ;
+
+        Debug.Log($"[전송 전] Original size: {size}, Original type: {type}");
+        packet.header.size = System.Net.IPAddress.HostToNetworkOrder(size);
+        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder(type);
+
+        Debug.Log($"[전송 전] Converted size: {packet.header.size}, Converted type: {(short)packet.header.type}");
         packet.roomIndex = 0;
 
         NetworkManager.Instance.Send(packet);
@@ -96,15 +107,16 @@ public class UIManager : MonoBehaviour
         }
     }
 
-     private void HandleUserEntered(PktS2CUserEnterNotify data)
+    private void HandleUserEntered(PktS2CUserEnterNotify data)
     {
+        Debug.Log($"HandleUserEntered 호출됨: {data.nickname} at slot {data.userSlotIndex}");
         playerLobbyTexts[data.userSlotIndex].text = data.nickname;
         statusText.text = $"{data.nickname} 님이 입장했습니다.";
     }
 
     private void HandleGameStart()
     {
-        // 게임이 시작되면 로비 패널은 비활성화하고 게임 패널을 활성화
+        Debug.Log("HandleGameStart 호출됨! 게임 패널을 활성화합니다.");
         lobbyPanel.SetActive(false);
         gamePanel.SetActive(true);
     }
