@@ -98,7 +98,7 @@ public struct PktC2SSubmitAnswerReq
     public string answer;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 1)]
+[StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Unicode)]
 public struct PktS2CRoundResultNotify
 {
     public PacketHeader header;
@@ -109,7 +109,7 @@ public struct PktS2CRoundResultNotify
     public PlayerInfo[] players;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 1)]
+[StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Unicode)]
 public struct PktS2CGameOverNotify
 {
     public PacketHeader header;

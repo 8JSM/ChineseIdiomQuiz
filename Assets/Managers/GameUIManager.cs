@@ -8,7 +8,7 @@ public class GameUIManager : MonoBehaviour
 {
     // LobbyUIManager가 제어할 패널 참조
     [Header("Panel References")]
-    public GameObject lobbyPanel; 
+    public GameObject lobbyPanel;
     public GameObject gamePanel;
 
     [Header("Game UI Elements")]
@@ -21,7 +21,7 @@ public class GameUIManager : MonoBehaviour
     [Header("Game Over UI")]
     public GameObject gameOverPanel;
     public TextMeshProUGUI winnerText;
-    
+
     // 이 스크립트가 활성화될 때(Awake)와 비활성화될 때(OnDestroy) 이벤트를 구독/해제합니다.
     void Awake()
     {
@@ -33,7 +33,7 @@ public class GameUIManager : MonoBehaviour
         // 정답 제출 버튼에 함수 연결
         submitButton.onClick.AddListener(OnSubmitAnswer);
     }
-    
+
     // 게임 시작 시 LobbyUIManager가 gamePanel을 활성화하면 이 함수가 자동 호출됩니다.
     void OnEnable()
     {
@@ -43,7 +43,7 @@ public class GameUIManager : MonoBehaviour
         questionText.text = "잠시 후 문제가 출제됩니다...";
         ClearScores(); // 점수판 초기화
     }
-    
+
     // NetworkManager가 "새 문제!" 방송을 하면 호출될 함수
     void HandleNewQuestion(string question)
     {
@@ -72,7 +72,7 @@ public class GameUIManager : MonoBehaviour
                 break;
             }
         }
-        
+
         StartCoroutine(ShowNotification($"정답: {result.answer}\n({winnerNickname}님 1점 획득!)", 3f));
     }
 
@@ -94,8 +94,10 @@ public class GameUIManager : MonoBehaviour
         if (string.IsNullOrEmpty(answerInput.text)) return;
 
         PktC2SSubmitAnswerReq packet = new PktC2SSubmitAnswerReq();
-        packet.header.size = (short)Marshal.SizeOf(packet);
-        packet.header.type = PacketType.C2S_SUBMIT_ANSWER_REQ;
+        short size = (short)Marshal.SizeOf(packet);
+        short type = (short)PacketType.C2S_SUBMIT_ANSWER_REQ;
+        packet.header.size = System.Net.IPAddress.HostToNetworkOrder(size);
+        packet.header.type = (PacketType)System.Net.IPAddress.HostToNetworkOrder(type);
         packet.answer = answerInput.text;
 
         NetworkManager.Instance.Send(packet);
@@ -116,10 +118,10 @@ public class GameUIManager : MonoBehaviour
         // LobbyUIManager의 playerLobbyTexts를 참조하여 초기 이름 설정 가능
         for (int i = 0; i < playerScoreTexts.Length; i++)
         {
-            playerScoreTexts[i].text = $"Player {i+1}: 0"; // 기본값
+            playerScoreTexts[i].text = $"Player {i + 1}: 0"; // 기본값
         }
     }
-    
+
     void UpdateScores(PlayerInfo[] players)
     {
         for (int i = 0; i < players.Length; i++)
@@ -132,7 +134,7 @@ public class GameUIManager : MonoBehaviour
             }
         }
     }
-    
+
     IEnumerator ShowNotification(string message, float duration)
     {
         notificationText.text = message;
