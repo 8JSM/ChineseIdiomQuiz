@@ -77,90 +77,81 @@ public class NetworkManager : MonoBehaviour
     // [핵심] 비동기 수신 루프 (백그라운드 스레드에서 실행됨)
     private async Task ReceiveLoop()
     {
-        try
+        var receiveBuffer = new byte[4096];
+        var memoryStream = new MemoryStream();
+        int headerSize = Marshal.SizeOf<PacketHeader>();
+
+        while (_client != null && _client.Connected)
         {
-            using (MemoryStream ms = new MemoryStream())
+            try
             {
-                while (_client != null && _client.Connected)
+                int bytesRead = await _stream.ReadAsync(receiveBuffer, 0, receiveBuffer.Length);
+                Debug.Log($"[ReceiveLoop] _stream.ReadAsync completed. Bytes read: {bytesRead}");
+                if (bytesRead <= 0)
                 {
-                    int bytesRead = await _stream.ReadAsync(_receiveBuffer, 0, _receiveBuffer.Length);
-                    if (bytesRead <= 0) break; // 연결 끊김
+                    Debug.Log("서버로부터 연결이 끊겼습니다.");
+                    _isDisconnectRequested = true;
+                    break;
+                }
 
-                    long previousPosition = ms.Position;
-                    ms.Seek(0, SeekOrigin.End); // 스트림의 끝으로 이동
-                    ms.Write(_receiveBuffer, 0, bytesRead); // 받은 데이터를 메모리 스트림에 누적
-                    ms.Position = previousPosition; // 원래 위치로 복원
+                // 받은 데이터를 메모리 스트림의 끝에 추가합니다.
+                memoryStream.Write(receiveBuffer, 0, bytesRead);
 
-                    // 완전한 패킷이 만들어졌는지 계속 확인
-                    while (true)
+                // 스트림에 완전한 패킷이 하나 이상 있는지 확인하고 처리합니다.
+                while (true)
+                {
+                    if (memoryStream.Length < 4) // 헤더 크기
+                        break;
+
+                    byte[] buffer = memoryStream.GetBuffer();
+
+                    // 서버가 보낸 Big Endian 바이트를 직접 조합
+                    short packetSize = (short)((buffer[0] << 8) | buffer[1]);
+
+                    // 타입도 동일하게 처리합니다.
+                    PacketType packetType = (PacketType)((buffer[2] << 8) | buffer[3]);
+
+                    // --- 디버깅 로그 ---
+                    Debug.Log($"[PacketLoop] Parsed Header -> Size: {packetSize}, Type: {packetType}");
+
+                    if (packetSize <= 0 || packetSize > 4096)
                     {
-                        ms.Position = 0; // 스트림 포인터를 처음으로
-                        if (ms.Length < Marshal.SizeOf<PacketHeader>()) break; // 헤더 크기보다 작으면 break
+                        Debug.LogError($"[PacketLoop] Invalid packet size: {packetSize}. Disconnecting.");
+                        _isDisconnectRequested = true;
+                        return;
+                    }
 
-                        // 헤더만 먼저 읽어서 패킷 전체 크기 확인
-                        byte[] headerBytes = new byte[Marshal.SizeOf<PacketHeader>()];
-                        ms.Read(headerBytes, 0, headerBytes.Length);
-                        PacketHeader header = BytesToStruct<PacketHeader>(headerBytes);
+                    if (memoryStream.Length < packetSize)
+                    {
+                        Debug.Log($"[PacketLoop] Stream length ({memoryStream.Length}) is smaller than required packet size ({packetSize}). Breaking for more data.");
+                        break;
+                    }
 
-                        short packetSize = System.Net.IPAddress.NetworkToHostOrder(header.size);
-                        PacketType packetType = (PacketType)System.Net.IPAddress.NetworkToHostOrder((short)header.type);
+                    // --- 패킷 처리 ---
+                    byte[] packetData = new byte[packetSize];
+                    Array.Copy(buffer, 0, packetData, 0, packetSize);
+                    _packetQueue.Enqueue(new QueuedPacket { type = packetType, data = packetData });
+                    Debug.Log($"[ReceiveLoop] Enqueued Packet! Type: {packetType}, Size: {packetSize}");
 
-                        Debug.Log($"[ReceiveLoop-Check] Buffer Length: {ms.Length}, Header Size: {packetSize} (Raw: {header.size})");
-                        if (packetSize < 0 || packetSize > 4096) // 0보다 작거나 비정상적으로 큰 패킷은 무시
-                        {
-                            Debug.LogError($"Invalid packet size received: {packetSize}. Disconnecting.");
-                            _isDisconnectRequested = true;
-                            return; // ReceiveLoop 종료
-                        }
-                        if (ms.Length < header.size)
-                        {
-                            ms.Position = ms.Length;
-                            break;
-                        } // 패킷이 아직 다 안 왔으면 break
-
-                        // 패킷 하나가 완전히 도착함
-                        ms.Position = 0;
-                        byte[] packetBytes = new byte[packetSize];
-                        ms.Read(packetBytes, 0, packetBytes.Length);
-
-                        // 큐에 넣어서 메인 스레드가 처리하도록 함
-                        _packetQueue.Enqueue(new QueuedPacket { type = packetType, data = packetBytes });
-                        Debug.Log($"[ReceiveLoop] Enqueued Packet! Type: {packetType}, Queue Count: {_packetQueue.Count}");
-
-                        // 처리한 패킷만큼 메모리 스트림에서 제거
-                        long remainingLength = ms.Length - packetSize;
-                        if (remainingLength > 0)
-                        {
-                            byte[] remainingBytes = new byte[remainingLength];
-                            ms.Read(remainingBytes, 0, remainingBytes.Length);
-                            ms.SetLength(0);
-                            ms.Write(remainingBytes, 0, remainingBytes.Length);
-                        }
-                        else
-                        {
-                            ms.SetLength(0); // 남은 데이터가 없으면 완전히 비움
-                        }
-
+                    int remainingSize = (int)memoryStream.Length - packetSize;
+                    if (remainingSize > 0)
+                    {
+                        byte[] remainingData = new byte[remainingSize];
+                        Array.Copy(buffer, packetSize, remainingData, 0, remainingSize);
+                        memoryStream = new MemoryStream();
+                        memoryStream.Write(remainingData, 0, remainingData.Length);
+                    }
+                    else
+                    {
+                        memoryStream = new MemoryStream();
                     }
                 }
             }
-        }
-        catch (Exception e)
-        {
-            if (e is ObjectDisposedException)
-            {
-                Debug.Log("Stream was closed, likely due to disconnection.");
-            }
-            else
+            catch (Exception e)
             {
                 Debug.LogError($"Receive error: {e.Message}\n{e.StackTrace}");
-            }
-        }
-        finally
-        {
-            if (_client != null && _client.Connected)
-            {
                 _isDisconnectRequested = true;
+                break;
             }
         }
     }
@@ -182,6 +173,7 @@ public class NetworkManager : MonoBehaviour
         // 큐에 쌓인 패킷들을 하나씩 처리
         while (_packetQueue.TryDequeue(out QueuedPacket packet))
         {
+            Debug.Log($"[Update] Dequeued packet. Type: {packet.type}");
             ProcessPacket(packet.type, packet.data);
         }
     }
@@ -189,34 +181,33 @@ public class NetworkManager : MonoBehaviour
     // 패킷 종류에 따라 분기 처리 (메인 스레드에서 실행됨)
     private void ProcessPacket(PacketType type, byte[] data)
     {
+        Debug.Log($"[ProcessPacket] Processing packet type: {type}");
         switch (type)
         {
             case PacketType.S2C_LOGIN_RES:
                 PktS2CLoginRes loginRes = BytesToStruct<PktS2CLoginRes>(data);
-                if (loginRes.success)
-                    OnStatusTextChanged?.Invoke("로그인 성공!");
-                else
-                    OnStatusTextChanged?.Invoke("로그인 실패!");
+                OnLoginResponse?.Invoke(loginRes);
                 break;
 
             case PacketType.S2C_ENTER_ROOM_RES:
                 PktS2CEnterRoomRes enterRes = BytesToStruct<PktS2CEnterRoomRes>(data);
-                if (enterRes.success)
-                {
-                    string msg = $"방 입장 성공! 현재 인원: {enterRes.playerCount}\n";
-                    for (int i = 0; i < enterRes.players.Length; ++i)
-                    {
-                        if (enterRes.players[i].slotIndex >= 0 && !string.IsNullOrEmpty(enterRes.players[i].nickname))
-                        {
-                            msg += $"[{enterRes.players[i].slotIndex}] {enterRes.players[i].nickname}\n";
-                        }
-                    }
-                    OnStatusTextChanged?.Invoke(msg);
-                }
-                else
-                {
-                    OnStatusTextChanged?.Invoke("방 입장 실패 (꽉 찼거나 오류 발생)");
-                }
+                // if (enterRes.success)
+                // {
+                //     string msg = $"방 입장 성공! 현재 인원: {enterRes.playerCount}\n";
+                //     for (int i = 0; i < enterRes.players.Length; ++i)
+                //     {
+                //         if (enterRes.players[i].slotIndex >= 0 && !string.IsNullOrEmpty(enterRes.players[i].nickname))
+                //         {
+                //             msg += $"[{enterRes.players[i].slotIndex}] {enterRes.players[i].nickname}\n";
+                //         }
+                //     }
+                //     OnStatusTextChanged?.Invoke(msg);
+                // }
+                // else
+                // {
+                //     OnStatusTextChanged?.Invoke("방 입장 실패 (꽉 찼거나 오류 발생)");
+                // }
+                OnEnterRoomResponse?.Invoke(enterRes);
                 break;
 
             case PacketType.S2C_USER_ENTER_NOTIFY:
@@ -248,36 +239,52 @@ public class NetworkManager : MonoBehaviour
     }
 
 
-    // [핵심] 구조체를 byte[]로 변환하는 범용 함수
-    public static byte[] StructToBytes<T>(T obj) where T : struct
+    public static T BytesToStruct<T>(byte[] buffer, int offset = 0) where T : struct
     {
-        int size = Marshal.SizeOf(obj);
-        byte[] arr = new byte[size];
+        T structure = default(T);
+        int size = Marshal.SizeOf(typeof(T));
         IntPtr ptr = Marshal.AllocHGlobal(size);
-        Marshal.StructureToPtr(obj, ptr, true);
-        Marshal.Copy(ptr, arr, 0, size);
-        Marshal.FreeHGlobal(ptr);
-        return arr;
+        try
+        {
+            Marshal.Copy(buffer, offset, ptr, size);
+            structure = (T)Marshal.PtrToStructure(ptr, typeof(T));
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+        return structure;
     }
 
-    // [핵심] byte[]를 구조체로 변환하는 범용 함수
-    public static T BytesToStruct<T>(byte[] buffer) where T : struct
+    public static byte[] StructToBytes<T>(T structure) where T : struct
     {
         int size = Marshal.SizeOf(typeof(T));
-        if (size > buffer.Length)
-            throw new Exception("Buffer smaller than struct size");
+        byte[] buffer = new byte[size];
         IntPtr ptr = Marshal.AllocHGlobal(size);
-        Marshal.Copy(buffer, 0, ptr, size);
-        T obj = (T)Marshal.PtrToStructure(ptr, typeof(T));
-        Marshal.FreeHGlobal(ptr);
-        return obj;
+        try
+        {
+            Marshal.StructureToPtr(structure, ptr, true);
+            Marshal.Copy(ptr, buffer, 0, size);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+        return buffer;
     }
 
     public void Send<T>(T packet) where T : struct
     {
         if (_client == null || !_client.Connected) return;
-        byte[] bytes = StructToBytes(packet);
-        _stream.WriteAsync(bytes, 0, bytes.Length);
+        try
+        {
+            byte[] data = StructToBytes(packet);
+            _stream.Write(data, 0, data.Length);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Send error: {e.Message}");
+        }
     }
 
     private void Disconnect()
